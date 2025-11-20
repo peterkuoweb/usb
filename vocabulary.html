@@ -1,0 +1,1061 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>單字大冒險 Vocab Quest v3</title>
+    <meta name="theme-color" content="#46178f">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/js/all.min.js"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;700;900&family=Noto+Sans+TC:wght@400;700&display=swap');
+
+        :root {
+            --color-primary: #46178f;
+            --color-secondary: #1368ce;
+            --color-accent: #26890c;
+            --color-danger: #e21b3c;
+            --color-warning: #ffa602;
+        }
+
+        body {
+            font-family: 'Nunito', 'Noto Sans TC', sans-serif;
+            background-color: #f2f2f2;
+            background-image: radial-gradient(#e0e0e0 1px, transparent 1px);
+            background-size: 20px 20px;
+            overflow: hidden;
+            touch-action: manipulation;
+        }
+
+        /* Animations */
+        @keyframes popIn {
+            0% { transform: scale(0.8); opacity: 0; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+        .animate-pop { animation: popIn 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards; }
+
+        .btn-push {
+            transition: all 0.1s;
+            box-shadow: 0 4px 0 rgba(0,0,0,0.2);
+            position: relative;
+            top: 0;
+        }
+        .btn-push:active {
+            transform: translateY(4px);
+            box-shadow: 0 0 0 rgba(0,0,0,0.2);
+            top: 4px;
+        }
+
+        .glass-panel {
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(10px);
+            border-radius: 1rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+
+        .key-btn {
+            @apply bg-white text-gray-800 font-bold rounded shadow border-b-4 border-gray-300 active:border-b-0 active:translate-y-1 select-none touch-manipulation flex items-center justify-center;
+            height: 45px;
+        }
+
+        .custom-scroll::-webkit-scrollbar { width: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #ccc; border-radius: 3px; }
+
+        .flip-card { perspective: 1000px; }
+        .flip-card-inner { transition: transform 0.6s; transform-style: preserve-3d; }
+        .flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
+        .flip-card-front, .flip-card-back { backface-visibility: hidden; }
+        .flip-card-back { transform: rotateY(180deg); }
+        
+        .folder-tab { position: relative; }
+        .folder-tab::before {
+            content: ''; position: absolute; top: -5px; left: 0;
+            width: 40%; height: 10px; background-color: inherit;
+            border-radius: 8px 8px 0 0;
+        }
+    </style>
+</head>
+<body class="h-screen w-full flex flex-col text-gray-800 select-none">
+
+    <!-- Top Bar -->
+    <header class="bg-[#46178f] text-white p-3 flex justify-between items-center shadow-md z-20 h-14 shrink-0">
+        <div class="font-black text-xl tracking-wider flex items-center gap-2 cursor-pointer" onclick="app.goHome()">
+            <i class="fa-solid fa-gamepad"></i> VOCAB QUEST
+        </div>
+        <div class="flex gap-2">
+            <button onclick="app.renderHistory()" class="bg-white/20 p-2 rounded-full hover:bg-white/30 transition w-10 h-10 flex items-center justify-center">
+                <i class="fa-solid fa-clock-rotate-left"></i>
+            </button>
+            <button onclick="app.renderSettings()" class="bg-white/20 p-2 rounded-full hover:bg-white/30 transition w-10 h-10 flex items-center justify-center">
+                <i class="fa-solid fa-gear"></i>
+            </button>
+            <button onclick="app.goHome()" class="bg-white/20 p-2 rounded-full hover:bg-white/30 transition w-10 h-10 flex items-center justify-center">
+                <i class="fa-solid fa-house"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main id="app-container" class="flex-1 relative overflow-hidden p-4 flex items-center justify-center">
+        <!-- Content Injected via JS -->
+    </main>
+
+    <!-- Notification / Feedback Modal (Overlay) -->
+    <div id="feedback-overlay" class="hidden fixed inset-0 z-50 bg-black/60 flex items-center justify-center backdrop-blur-sm">
+        <div id="feedback-content" class="bg-white p-6 rounded-2xl shadow-2xl w-11/12 max-w-md text-center transform transition-all overflow-y-auto max-h-[90vh]">
+            <!-- Feedback injected here -->
+        </div>
+    </div>
+
+    <script>
+        // --- Initial Data & Config ---
+        const DEFAULT_VOCAB = [
+            { id: 1, word: "apple", meaning: "蘋果", sentences: ["I ate a red ___.", "The ___ fell from the tree."] },
+            { id: 2, word: "banana", meaning: "香蕉", sentences: ["Monkeys love ___."] },
+            { id: 3, word: "computer", meaning: "電腦", sentences: ["I use a ___ to code.", "The ___ is broken."] },
+            { id: 4, word: "adventure", meaning: "冒險", sentences: ["Life is a daring ___."] },
+            { id: 5, word: "galaxy", meaning: "銀河", sentences: ["The ___ is full of stars."] }
+        ];
+
+        // --- State Management ---
+        const app = {
+            workbooks: [],
+            history: [],
+            sessionWords: [],
+            currentWorkbookId: null, 
+            currentQuiz: null,
+            inputBuffer: '',
+            currentGameType: null,
+            currentSessionInfo: {}, // Stores metadata for history
+            
+            init() {
+                const savedData = localStorage.getItem('vq_data_v3');
+                const savedHistory = localStorage.getItem('vq_history');
+                
+                if (savedData) {
+                    this.workbooks = JSON.parse(savedData);
+                } else {
+                    // Migration attempt from v2
+                    const v2Data = localStorage.getItem('vq_data_v2');
+                    if (v2Data) {
+                         this.workbooks = JSON.parse(v2Data);
+                    } else {
+                         // Migration attempt from v1
+                        const v1Data = localStorage.getItem('vq_vocab');
+                        let initialWords = v1Data ? JSON.parse(v1Data) : DEFAULT_VOCAB;
+                        this.workbooks = [{ id: 'wb_' + Date.now(), name: '預設單字本', words: initialWords }];
+                    }
+                    this.saveData();
+                }
+
+                if (savedHistory) {
+                    this.history = JSON.parse(savedHistory);
+                }
+
+                this.goHome();
+            },
+
+            saveData() {
+                localStorage.setItem('vq_data_v3', JSON.stringify(this.workbooks));
+                localStorage.setItem('vq_history', JSON.stringify(this.history));
+            },
+
+            addHistory(mode, score, total, workbookName) {
+                this.history.unshift({
+                    timestamp: new Date().toLocaleString(),
+                    mode: mode,
+                    workbook: workbookName,
+                    score: `${score} / ${total}`,
+                    percentage: Math.round((score/total)*100)
+                });
+                // Limit history to last 50 entries
+                if(this.history.length > 50) this.history.pop();
+                this.saveData();
+            },
+
+            speak(text) {
+                window.speechSynthesis.cancel();
+                const u = new SpeechSynthesisUtterance(text);
+                u.lang = 'en-US';
+                u.rate = 0.9;
+                window.speechSynthesis.speak(u);
+            },
+
+            // --- Navigation ---
+            goHome() {
+                this.renderHome();
+            },
+
+            // --- History View ---
+            renderHistory() {
+                const list = this.history.map(h => `
+                    <div class="bg-white p-4 rounded-xl shadow-sm mb-3 border-l-4 ${h.percentage >= 60 ? 'border-green-500' : 'border-red-500'}">
+                        <div class="flex justify-between items-start mb-1">
+                            <span class="font-bold text-gray-700">${h.mode}</span>
+                            <span class="text-xs text-gray-400">${h.timestamp}</span>
+                        </div>
+                        <div class="flex justify-between items-center">
+                            <span class="text-sm text-gray-500"><i class="fa-solid fa-book mr-1"></i> ${h.workbook}</span>
+                            <span class="font-black text-lg ${h.percentage >= 60 ? 'text-green-600' : 'text-red-500'}">${h.score}</span>
+                        </div>
+                    </div>
+                `).join('');
+
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-md">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-black text-[#46178f]">練習記錄</h2>
+                            <button onclick="app.clearHistory()" class="text-sm text-red-400 underline">清空</button>
+                        </div>
+                        <div class="flex-1 overflow-y-auto custom-scroll pr-1 pb-4">
+                            ${list || '<div class="text-center text-gray-400 mt-10">還沒有練習記錄喔！</div>'}
+                        </div>
+                        <button onclick="app.goHome()" class="w-full py-3 text-gray-500 font-bold">返回主選單</button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            clearHistory() {
+                if(confirm("確定要清空所有記錄嗎？")) {
+                    this.history = [];
+                    this.saveData();
+                    this.renderHistory();
+                }
+            },
+
+            // --- Settings / Export / Import ---
+            renderSettings() {
+                const wbOptions = this.workbooks.map(wb => `<option value="${wb.id}">${wb.name}</option>`).join('');
+                
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-md">
+                        <h2 class="text-2xl font-black text-[#46178f] mb-6 text-center">設定與資料</h2>
+                        
+                        <div class="glass-panel p-6 mb-4">
+                            <h3 class="font-bold text-gray-700 mb-3"><i class="fa-solid fa-file-export mr-2"></i>匯出單字本</h3>
+                            <select id="export-select" class="w-full p-3 bg-gray-100 rounded-lg mb-4 outline-none border-r-8 border-transparent">
+                                ${wbOptions}
+                            </select>
+                            <div class="grid grid-cols-3 gap-2">
+                                <button onclick="app.exportJSON()" class="btn-push bg-gray-800 text-white p-2 rounded-lg text-sm font-bold">JSON</button>
+                                <button onclick="app.exportHTML()" class="btn-push bg-blue-600 text-white p-2 rounded-lg text-sm font-bold">HTML</button>
+                                <button onclick="app.exportPDF()" class="btn-push bg-red-600 text-white p-2 rounded-lg text-sm font-bold">PDF</button>
+                            </div>
+                            <p class="text-xs text-gray-400 mt-2">* PDF 匯出將開啟列印視窗，請選擇「另存為 PDF」</p>
+                        </div>
+
+                        <div class="glass-panel p-6 mb-4">
+                            <h3 class="font-bold text-gray-700 mb-3"><i class="fa-solid fa-file-import mr-2"></i>匯入單字本</h3>
+                            <label class="btn-push block w-full bg-[#26890c] text-white text-center p-3 rounded-lg font-bold cursor-pointer">
+                                選擇 JSON 檔案
+                                <input type="file" id="import-file" accept=".json" class="hidden" onchange="app.importJSON(this)">
+                            </label>
+                        </div>
+
+                        <button onclick="app.goHome()" class="mt-auto w-full py-3 text-gray-500 font-bold">返回主選單</button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            exportJSON() {
+                const id = document.getElementById('export-select').value;
+                const wb = this.workbooks.find(b => b.id === id);
+                if (!wb) return;
+                
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify([wb])); // Wrap in array for compatibility with import
+                const downloadAnchorNode = document.createElement('a');
+                downloadAnchorNode.setAttribute("href", dataStr);
+                downloadAnchorNode.setAttribute("download", `${wb.name}_backup.json`);
+                document.body.appendChild(downloadAnchorNode);
+                downloadAnchorNode.click();
+                downloadAnchorNode.remove();
+            },
+
+            // Helper for generating aesthetic HTML for Export
+            generateExportHTML(wb) {
+                 const rows = wb.words.map((w, i) => `
+                    <tr style="${i % 2 === 0 ? 'background:#f9f9f9' : ''}">
+                        <td style="padding:12px; font-weight:bold; border-bottom:1px solid #eee;">${w.word}</td>
+                        <td style="padding:12px; border-bottom:1px solid #eee;">${w.meaning}</td>
+                        <td style="padding:12px; font-style:italic; color:#666; font-size:0.9em; border-bottom:1px solid #eee;">
+                            ${w.sentences.map(s => `<div>• ${s}</div>`).join('')}
+                        </td>
+                    </tr>
+                `).join('');
+
+                return `
+                    <html>
+                    <head>
+                        <title>${wb.name} - 單字表</title>
+                        <style>
+                            body { font-family: 'Helvetica', 'Arial', sans-serif; padding: 40px; color: #333; }
+                            h1 { color: #46178f; border-bottom: 3px solid #46178f; padding-bottom: 10px; }
+                            table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+                            th { text-align: left; padding: 12px; background: #46178f; color: white; }
+                            .footer { margin-top: 30px; font-size: 0.8em; text-align: center; color: #999; }
+                        </style>
+                    </head>
+                    <body>
+                        <h1>${wb.name}</h1>
+                        <p>共 ${wb.words.length} 個單字</p>
+                        <table>
+                            <thead><tr><th width="25%">單字</th><th width="25%">意思</th><th width="50%">例句</th></tr></thead>
+                            <tbody>${rows}</tbody>
+                        </table>
+                        <div class="footer">Generated by Vocab Quest</div>
+                    </body>
+                    </html>
+                `;
+            },
+
+            exportHTML() {
+                const id = document.getElementById('export-select').value;
+                const wb = this.workbooks.find(b => b.id === id);
+                if (!wb) return;
+
+                const htmlContent = this.generateExportHTML(wb);
+                const blob = new Blob([htmlContent], {type: 'text/html'});
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${wb.name}_list.html`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            },
+
+            exportPDF() {
+                const id = document.getElementById('export-select').value;
+                const wb = this.workbooks.find(b => b.id === id);
+                if (!wb) return;
+
+                const htmlContent = this.generateExportHTML(wb);
+                const printWindow = window.open('', '', 'height=600,width=800');
+                printWindow.document.write(htmlContent);
+                printWindow.document.close();
+                printWindow.focus();
+                setTimeout(() => {
+                    printWindow.print();
+                    printWindow.close();
+                }, 500);
+            },
+
+            importJSON(input) {
+                const file = input.files[0];
+                if (!file) return;
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        // Validate basic structure (Array of Workbooks)
+                        if (Array.isArray(data) && data[0].name && Array.isArray(data[0].words)) {
+                            data.forEach(wb => {
+                                wb.id = 'wb_' + Date.now() + Math.floor(Math.random()*1000); // Reset ID to avoid conflict
+                                this.workbooks.push(wb);
+                            });
+                            this.saveData();
+                            alert(`成功匯入 ${data.length} 本單字本！`);
+                            this.renderSettings(); // Refresh
+                        } else {
+                            alert("檔案格式錯誤！請確認這是由本程式匯出的 JSON 檔案。");
+                        }
+                    } catch (err) {
+                        alert("讀取錯誤：" + err);
+                    }
+                };
+                reader.readAsText(file);
+            },
+
+            // --- Workbook Selector ---
+            renderWorkbookSelect(mode) {
+                const totalWords = this.workbooks.reduce((acc, wb) => acc + wb.words.length, 0);
+
+                const listHtml = this.workbooks.map(wb => `
+                    <button onclick="app.handleWorkbookSelection('${mode}', '${wb.id}', '${wb.name}')" class="btn-push w-full bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-[#46178f] text-left group">
+                        <div class="flex items-center gap-3">
+                            <i class="fa-solid fa-folder text-[#ffa602] text-2xl group-hover:scale-110 transition"></i>
+                            <div>
+                                <div class="font-bold text-lg text-gray-700">${wb.name}</div>
+                                <div class="text-xs text-gray-400">${wb.words.length} 個單字</div>
+                            </div>
+                        </div>
+                        <i class="fa-solid fa-chevron-right text-gray-300"></i>
+                    </button>
+                `).join('');
+
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-md">
+                        <h2 class="text-2xl font-black text-[#46178f] mb-2 text-center">選擇單字來源</h2>
+                        
+                        <div class="flex-1 overflow-y-auto custom-scroll pr-1 pb-4">
+                            <button onclick="app.handleWorkbookSelection('${mode}', 'all', '全部單字')" class="btn-push w-full bg-gradient-to-r from-[#46178f] to-[#6a2ec1] p-5 rounded-xl shadow-md mb-4 flex justify-between items-center text-left text-white relative overflow-hidden">
+                                <div class="relative z-10 flex items-center gap-3">
+                                    <i class="fa-solid fa-layer-group text-white text-2xl"></i>
+                                    <div>
+                                        <div class="font-bold text-lg">全部單字</div>
+                                        <div class="text-xs text-white/70">共 ${totalWords} 個單字</div>
+                                    </div>
+                                </div>
+                                <i class="fa-solid fa-play text-white/50 text-xl relative z-10"></i>
+                            </button>
+
+                            ${listHtml}
+                        </div>
+                        <button onclick="app.goHome()" class="text-gray-400 py-4 font-bold text-sm">取消返回</button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            handleWorkbookSelection(mode, wbId, wbName) {
+                if (wbId === 'all') {
+                    this.sessionWords = this.workbooks.flatMap(wb => wb.words);
+                } else {
+                    const wb = this.workbooks.find(b => b.id === wbId);
+                    this.sessionWords = wb ? [...wb.words] : [];
+                }
+
+                if (this.sessionWords.length === 0) return alert("這個單字本是空的！請先去管理單字新增內容。");
+
+                // Store session info for history
+                this.currentSessionInfo = {
+                    wbName: wbName,
+                    modeName: '' // Will be set in next step
+                };
+
+                if (mode === 'review') {
+                    this.currentSessionInfo.modeName = '聽寫複習';
+                    this.startReviewSetup();
+                } else if (mode === 'sentence') {
+                    this.currentSessionInfo.modeName = '句意填空';
+                    this.startSentenceSetup();
+                } else if (mode === 'game') {
+                    this.renderGameSelect();
+                }
+            },
+
+            // --- Review Logic ---
+            startReviewSetup() {
+                const max = this.sessionWords.length;
+                const html = `
+                    <div class="glass-panel p-8 w-full max-w-md text-center animate-pop">
+                        <h2 class="text-2xl font-black text-[#46178f] mb-6">聽寫複習</h2>
+                        <div class="mb-6">
+                            <label class="block text-gray-600 mb-2 font-bold">選擇題數 (最多 ${max} 題)</label>
+                            <div class="flex items-center gap-4">
+                                <button class="btn-push bg-gray-200 w-10 h-10 rounded-full font-bold" onclick="adjustCount(-1)">-</button>
+                                <span id="q-count" class="text-3xl font-bold text-[#1368ce]">5</span>
+                                <button class="btn-push bg-gray-200 w-10 h-10 rounded-full font-bold" onclick="adjustCount(1)">+</button>
+                            </div>
+                            <input type="range" id="q-slider" min="1" max="${max}" value="${Math.min(5, max)}" class="w-full mt-4 accent-[#46178f]" oninput="updateCount(this.value)">
+                        </div>
+                        <button onclick="app.initReview(parseInt(document.getElementById('q-slider').value))" class="btn-push w-full bg-[#26890c] text-white text-xl font-bold py-4 rounded-xl">
+                            開始挑戰
+                        </button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+                window.adjustCount = (n) => {
+                    const slider = document.getElementById('q-slider');
+                    let v = parseInt(slider.value) + n;
+                    if (v >= 1 && v <= max) { slider.value = v; updateCount(v); }
+                };
+                window.updateCount = (v) => document.getElementById('q-count').innerText = v;
+            },
+
+            initReview(count) {
+                const shuffled = [...this.sessionWords].sort(() => 0.5 - Math.random()).slice(0, count);
+                this.currentQuiz = { type: 'review', questions: shuffled, index: 0, score: 0 };
+                this.renderReviewQuestion();
+            },
+
+            renderReviewQuestion() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                this.inputBuffer = '';
+                setTimeout(() => this.speak(q.word), 500);
+
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-2xl mx-auto">
+                        <div class="flex justify-between items-end mb-2 px-2">
+                            <span class="font-bold text-gray-500">第 ${this.currentQuiz.index + 1} / ${this.currentQuiz.questions.length} 題</span>
+                            <span class="text-sm bg-gray-200 px-2 py-1 rounded">聽寫測試</span>
+                        </div>
+                        <div class="h-2 w-full bg-gray-300 rounded-full mb-4 overflow-hidden">
+                            <div class="h-full bg-[#1368ce] transition-all duration-500" style="width: ${(this.currentQuiz.index / this.currentQuiz.questions.length) * 100}%"></div>
+                        </div>
+                        <div class="flex-1 flex flex-col items-center justify-center bg-white rounded-xl shadow-lg p-4 relative mb-2">
+                            <button onclick="app.speak('${q.word.replace(/'/g, "\\'")}')" class="btn-push bg-[#ffa602] text-white w-20 h-20 rounded-full text-3xl shadow-lg mb-6 flex items-center justify-center">
+                                <i class="fa-solid fa-volume-high"></i>
+                            </button>
+                            <p class="text-gray-400 mb-2">請輸入聽到的單字</p>
+                            <div id="display-input" class="text-4xl font-black text-[#46178f] tracking-widest border-b-4 border-gray-200 min-h-[3rem] min-w-[200px] text-center px-4 mb-2"><span class="animate-pulse">|</span></div>
+                            <button onclick="this.innerText = '${q.meaning}'; this.classList.remove('bg-gray-100', 'text-gray-400'); this.classList.add('text-[#1368ce]')" class="mt-4 text-sm bg-gray-100 text-gray-400 px-3 py-1 rounded-full">顯示提示 (意思)</button>
+                        </div>
+                        ${this.getKeyboardHTML()}
+                        <button onclick="app.checkGameTypedAnswer()" class="btn-push w-full bg-[#46178f] text-white font-bold py-3 rounded-xl mt-2 text-xl shadow-md">確認答案</button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+                this.updateInputDisplay();
+            },
+
+            // --- Sentence Completion ---
+            startSentenceSetup() {
+                // Ensure we only pick words with sentences
+                const validWords = this.sessionWords.filter(w => w.sentences && w.sentences.some(s => s.trim() !== ""));
+                if (validWords.length === 0) return alert("選定的單字中沒有設定例句！請去管理單字新增例句。");
+
+                const count = Math.min(5, validWords.length);
+                const shuffled = [...validWords].sort(() => 0.5 - Math.random()).slice(0, count);
+                
+                this.currentQuiz = { type: 'sentence', questions: shuffled, index: 0, score: 0 };
+                this.renderSentenceQuestion();
+            },
+
+            renderSentenceQuestion() {
+                this.inputBuffer = '';
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                // Randomly pick one sentence from the array
+                const sentenceRaw = q.sentences[Math.floor(Math.random() * q.sentences.length)];
+                
+                let sentenceDisplay = sentenceRaw;
+                // Replace word with blank if not already blanked (case insensitive)
+                if (!sentenceDisplay.includes('___')) {
+                   const reg = new RegExp(q.word, 'gi');
+                   sentenceDisplay = sentenceDisplay.replace(reg, '___');
+                }
+
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-2xl mx-auto">
+                         <div class="flex justify-between items-end mb-2 px-2">
+                            <span class="font-bold text-gray-500">第 ${this.currentQuiz.index + 1} / ${this.currentQuiz.questions.length} 題</span>
+                            <span class="text-sm bg-green-100 text-green-800 px-2 py-1 rounded font-bold">句意填空</span>
+                        </div>
+                        <div class="flex-1 flex flex-col items-center justify-center bg-white rounded-xl shadow-lg p-6 mb-2 text-center">
+                            <h3 class="text-xl text-gray-500 font-bold mb-2">填入正確單字</h3>
+                            <div class="text-2xl font-bold text-gray-800 leading-relaxed bg-gray-50 p-4 rounded-lg w-full">
+                                ${sentenceDisplay}
+                            </div>
+                             <div class="mt-2 text-sm text-gray-400">(${q.meaning})</div>
+                             <div id="display-input" class="mt-6 text-4xl font-black text-[#26890c] tracking-widest border-b-4 border-gray-200 min-h-[3rem] min-w-[200px] text-center px-4"><span class="animate-pulse">|</span></div>
+                        </div>
+                        ${this.getKeyboardHTML()}
+                        <button onclick="app.checkGameTypedAnswer()" class="btn-push w-full bg-[#26890c] text-white font-bold py-3 rounded-xl mt-2 text-xl shadow-md">確認填空</button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+                this.updateInputDisplay();
+            },
+
+            // --- Games ---
+            renderGameSelect() {
+                const games = [
+                    { id: 1, name: "單字翻翻樂", icon: "fa-clone", color: "bg-orange-500", type: "flashcards" },
+                    { id: 2, name: "四選一測驗", icon: "fa-list-ol", color: "bg-blue-500", type: "quiz4" },
+                    { id: 3, name: "聽音辨義", icon: "fa-headphones", color: "bg-purple-500", type: "listening" },
+                    { id: 4, name: "單字拼拼看", icon: "fa-puzzle-piece", color: "bg-green-500", type: "scramble" },
+                    { id: 5, name: "劊子手", icon: "fa-skull", color: "bg-red-500", type: "hangman" },
+                    { id: 6, name: "記憶配對", icon: "fa-table-cells", color: "bg-teal-500", type: "memory" },
+                    { id: 7, name: "極速打字", icon: "fa-keyboard", color: "bg-indigo-500", type: "typer" },
+                    { id: 8, name: "意思配對", icon: "fa-link", color: "bg-pink-500", type: "match_meaning" },
+                    { id: 9, name: "母音大填空", icon: "fa-i-cursor", color: "bg-yellow-500", type: "vowels" },
+                    { id: 10, name: "真假單字", icon: "fa-check-double", color: "bg-cyan-600", type: "bool_quiz" }
+                ];
+
+                const grid = games.map(g => `
+                    <button onclick="app.startGame('${g.type}', '${g.name}')" class="btn-push ${g.color} text-white rounded-xl p-4 flex flex-col items-center justify-center gap-2 shadow-lg h-28">
+                        <i class="fa-solid ${g.icon} text-3xl"></i>
+                        <span class="font-bold text-sm">${g.name}</span>
+                    </button>
+                `).join('');
+
+                document.getElementById('app-container').innerHTML = `
+                    <div class="w-full max-w-2xl h-full flex flex-col">
+                        <h2 class="text-2xl font-black text-[#46178f] mb-4 text-center">選擇遊戲</h2>
+                        <div class="grid grid-cols-2 gap-3 overflow-y-auto pb-4 custom-scroll flex-1">
+                            ${grid}
+                        </div>
+                    </div>
+                `;
+            },
+
+            startGame(type, name) {
+                if(this.sessionWords.length < 4) return alert("單字量太少，請至少選擇有 4 個單字以上的單字本！");
+                this.currentGameType = type;
+                this.currentSessionInfo.modeName = name; // Update for history
+                
+                this.currentQuiz = {
+                    type: 'game',
+                    gameType: type,
+                    questions: [...this.sessionWords].sort(() => 0.5 - Math.random()).slice(0, 10), 
+                    index: 0,
+                    score: 0
+                };
+                this.renderGameRoute();
+            },
+
+            renderGameRoute() {
+                const type = this.currentQuiz.gameType;
+                if (type === 'flashcards') this.gameFlashcards();
+                else if (type === 'quiz4') this.gameQuiz4();
+                else if (type === 'listening') this.gameListening();
+                else if (type === 'scramble') this.gameScramble();
+                else if (type === 'hangman') this.gameHangman();
+                else if (type === 'memory') this.gameMemory();
+                else if (type === 'typer') this.gameTyper();
+                else if (type === 'match_meaning') this.gameMatchMeaning();
+                else if (type === 'vowels') this.gameVowels();
+                else if (type === 'bool_quiz') this.gameBoolQuiz();
+            },
+
+            // --- Game Logic (Simplified for space) ---
+            checkGameTypedAnswer() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                const userAns = this.inputBuffer.trim().toLowerCase();
+                const correctAns = q.word.toLowerCase();
+                const isCorrect = userAns === correctAns;
+                if (isCorrect) this.currentQuiz.score++;
+                this.showFeedback(isCorrect, correctAns, userAns, () => { this.nextGameRound(); });
+            },
+
+            gameFlashcards() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                const html = `
+                   <div class="flex flex-col h-full w-full items-center justify-center relative">
+                        <h3 class="text-xl font-bold text-gray-500 mb-4">單字翻翻樂 (${this.currentQuiz.index + 1}/${this.currentQuiz.questions.length})</h3>
+                        <div class="flip-card w-64 h-80 cursor-pointer" onclick="this.classList.toggle('flipped')">
+                            <div class="flip-card-inner w-full h-full relative text-center shadow-2xl rounded-2xl">
+                                <div class="flip-card-front absolute w-full h-full bg-[#46178f] text-white rounded-2xl flex flex-col items-center justify-center p-4">
+                                    <i class="fa-solid fa-lightbulb text-4xl mb-4 text-yellow-300"></i>
+                                    <h2 class="text-3xl font-black">${q.word}</h2>
+                                    <p class="mt-4 text-white/70 text-sm">點擊翻轉看意思</p>
+                                </div>
+                                <div class="flip-card-back absolute w-full h-full bg-white text-[#46178f] rounded-2xl flex flex-col items-center justify-center p-4 border-4 border-[#46178f]">
+                                    <h2 class="text-3xl font-bold">${q.meaning}</h2>
+                                    <button onclick="event.stopPropagation(); app.speak('${q.word.replace(/'/g, "\\'")}')" class="mt-6 bg-gray-200 rounded-full p-3 w-12 h-12 flex items-center justify-center"><i class="fa-solid fa-volume-high"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                        <button onclick="app.nextGameRound()" class="btn-push mt-8 w-full max-w-xs bg-[#26890c] text-white py-3 rounded-xl font-bold">下一個</button>
+                   </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            gameQuiz4() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                let others = this.sessionWords.filter(v => v.id !== q.id).sort(() => 0.5 - Math.random()).slice(0, 3);
+                while(others.length < 3 && this.sessionWords.length > 1) { others.push(this.sessionWords.filter(v => v.id !== q.id)[0]); }
+                let options = [...others, q].sort(() => 0.5 - Math.random());
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-md justify-center">
+                         <div class="text-center mb-8 bg-white p-6 rounded-2xl shadow-lg">
+                            <p class="text-gray-400 text-sm font-bold mb-2">這個意思對應哪個單字？</p>
+                            <h2 class="text-3xl font-black text-[#46178f]">${q.meaning}</h2>
+                         </div>
+                         <div class="grid grid-cols-1 gap-3">
+                            ${options.map(opt => `<button onclick="app.checkGameChoice('${opt.word}', '${q.word}')" class="btn-push bg-white border-2 border-gray-200 p-4 rounded-xl font-bold text-lg text-left">${opt.word}</button>`).join('')}
+                         </div>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            gameScramble() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                const scrambled = q.word.split('').sort(() => 0.5 - Math.random()).join('');
+                this.inputBuffer = '';
+                const html = `
+                     <div class="flex flex-col h-full w-full max-w-2xl justify-center items-center">
+                        <div class="bg-[#ffeb3b] w-full p-6 rounded-2xl shadow-lg mb-4 text-center relative overflow-hidden">
+                             <div class="text-gray-700 font-bold mb-2">重組這個單字 (${q.meaning})</div>
+                             <div class="text-4xl font-black tracking-widest text-[#46178f]">${scrambled}</div>
+                        </div>
+                        <div id="display-input" class="text-3xl font-bold text-[#1368ce] border-b-4 border-[#1368ce] min-h-[3rem] min-w-[200px] text-center px-4 mb-4">|</div>
+                        ${this.getKeyboardHTML()}
+                        <button onclick="app.checkGameTypedAnswer()" class="btn-push w-full bg-[#1368ce] text-white font-bold py-3 rounded-xl mt-4">檢查</button>
+                     </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+                this.updateInputDisplay();
+            },
+
+            gameHangman() {
+                if (!this.currentQuiz.hangmanState) this.currentQuiz.hangmanState = { tries: 6, guessed: [] };
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                const state = this.currentQuiz.hangmanState;
+                const displayWord = q.word.split('').map(char => state.guessed.includes(char.toLowerCase()) ? char : '_').join(' ');
+                const isComplete = !displayWord.includes('_');
+                const isDead = state.tries <= 0;
+                
+                const renderKeys = () => ["qwertyuiop", "asdfghjkl", "zxcvbnm"].map(row => `
+                    <div class="flex gap-1 justify-center w-full mb-1">
+                        ${row.split('').map(key => {
+                            const used = state.guessed.includes(key);
+                            let color = 'bg-white text-gray-800';
+                            if (used) color = q.word.includes(key) ? 'bg-green-500 text-white' : 'bg-gray-300 text-gray-500';
+                            return `<button onclick="app.handleHangmanInput('${key}')" ${used || isDead || isComplete ? 'disabled' : ''} class="key-btn flex-1 text-lg uppercase ${color}">${key}</button>`
+                        }).join('')}
+                    </div>
+                `).join('');
+
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-2xl justify-center items-center">
+                        <div class="text-center mb-4"><i class="fa-solid fa-heart text-red-500"></i> x ${state.tries}</div>
+                        <div class="text-4xl font-mono font-bold tracking-widest mb-2">${displayWord}</div>
+                        <div class="text-gray-500 mb-6">${q.meaning}</div>
+                        <div class="w-full bg-gray-100 p-2 rounded-xl">${renderKeys()}</div>
+                         ${ (isComplete || isDead) ? `<button onclick="app.nextGameRound()" class="btn-push w-full bg-[#46178f] text-white font-bold py-3 rounded-xl mt-4">${isComplete ? '答對了！下一題' : '失敗！下一題'}</button>` : '' }
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+                if (isComplete && !state.scored) { this.currentQuiz.score++; state.scored = true; }
+            },
+            handleHangmanInput(key) {
+                const state = this.currentQuiz.hangmanState;
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                state.guessed.push(key);
+                if (!q.word.includes(key)) state.tries--;
+                this.gameHangman();
+            },
+
+            gameListening() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                 let others = this.sessionWords.filter(v => v.id !== q.id).sort(() => 0.5 - Math.random()).slice(0, 3);
+                 while(others.length < 3 && this.sessionWords.length > 1) { others.push(this.sessionWords.filter(v=>v.id!==q.id)[0]) }
+                 let options = [...others, q].sort(() => 0.5 - Math.random());
+                 const html = `
+                    <div class="flex flex-col h-full w-full max-w-md justify-center items-center">
+                        <button onclick="app.speak('${q.word.replace(/'/g, "\\'")}')" class="btn-push bg-[#46178f] text-white w-24 h-24 rounded-full text-4xl shadow-xl mb-8 animate-pop flex items-center justify-center"><i class="fa-solid fa-volume-high"></i></button>
+                        <p class="mb-4 font-bold text-gray-500">聽音選義</p>
+                        <div class="grid grid-cols-1 gap-3 w-full">${options.map(opt => `<button onclick="app.checkGameChoice('${opt.word}', '${q.word}')" class="btn-push bg-white border-2 border-gray-200 p-4 rounded-xl font-bold text-lg">${opt.meaning}</button>`).join('')}</div>
+                    </div>
+                 `;
+                 document.getElementById('app-container').innerHTML = html;
+                 setTimeout(() => this.speak(q.word), 300);
+            },
+
+            gameMemory() {
+                 const q = this.currentQuiz.questions[this.currentQuiz.index];
+                 let subset = [q, ...this.sessionWords.filter(v=>v.id!==q.id).slice(0,3)].sort(()=>0.5-Math.random());
+                 let cards = [];
+                 subset.forEach(i => { cards.push({id: i.id, content: i.word, type:'word'}); cards.push({id: i.id, content: i.meaning, type:'mean'}); });
+                 cards.sort(() => 0.5 - Math.random());
+                 const html = `
+                    <div class="flex flex-col h-full w-full items-center justify-center">
+                        <h3 class="font-bold mb-2 text-gray-500">找出對應的卡片</h3>
+                        <div class="grid grid-cols-4 gap-2 w-full max-w-md aspect-square" id="memory-grid">
+                            ${cards.map(c => `<button onclick="app.handleMemoryClick(this, '${c.id}')" class="bg-white rounded shadow-md font-bold text-xs sm:text-sm break-all p-1 h-full flex items-center justify-center border-2 border-transparent hover:border-blue-300 transition">${c.content}</button>`).join('')}
+                        </div>
+                        <button onclick="app.nextGameRound()" class="mt-4 text-gray-400 underline">跳過</button>
+                    </div>
+                 `;
+                 document.getElementById('app-container').innerHTML = html;
+                 this.memoryState = { selected: null, count: 0, target: subset.length };
+            },
+            handleMemoryClick(el, id) {
+                if(el.disabled || el.classList.contains('bg-green-500')) return;
+                el.classList.add('bg-yellow-200');
+                if(!this.memoryState.selected) {
+                    this.memoryState.selected = { el, id };
+                } else {
+                    const prev = this.memoryState.selected;
+                    if(prev.el === el) return; 
+                    if(prev.id === id) {
+                        el.className = prev.el.className = "bg-green-500 text-white rounded shadow-md font-bold text-xs sm:text-sm p-1 h-full flex items-center justify-center transition transform scale-95";
+                        el.disabled = prev.el.disabled = true;
+                        this.memoryState.selected = null;
+                        this.memoryState.count++;
+                        if(this.memoryState.count === this.memoryState.target) { setTimeout(() => { this.currentQuiz.score++; this.nextGameRound(); }, 800); }
+                    } else {
+                        el.classList.add('bg-red-200'); prev.el.classList.add('bg-red-200');
+                        setTimeout(() => { el.classList.remove('bg-yellow-200', 'bg-red-200'); prev.el.classList.remove('bg-yellow-200', 'bg-red-200'); this.memoryState.selected = null; }, 800);
+                    }
+                }
+            },
+            
+            gameTyper() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                this.inputBuffer = '';
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-2xl justify-center">
+                        <div class="bg-black text-green-400 font-mono p-6 rounded-xl mb-4 text-center shadow-inner">
+                            <div class="text-sm text-gray-500 mb-2">TYPE THIS FAST!</div>
+                            <div class="text-4xl font-bold">${q.word}</div>
+                        </div>
+                        <div id="display-input" class="text-3xl font-bold text-gray-800 border-2 border-gray-300 rounded-lg min-h-[3.5rem] flex items-center justify-center mb-4 bg-white"></div>
+                        ${this.getKeyboardHTML()}
+                        <button onclick="app.checkGameTypedAnswer()" class="btn-push w-full bg-gray-800 text-white font-bold py-3 rounded-xl mt-4">ENTER</button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+                this.updateInputDisplay();
+            },
+            
+            gameMatchMeaning() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                let others = this.sessionWords.filter(v => v.id !== q.id).sort(() => 0.5 - Math.random()).slice(0, 3);
+                while(others.length < 3 && this.sessionWords.length > 1) { others.push(this.sessionWords.filter(v=>v.id!==q.id)[0]) }
+                let options = [...others, q].sort(() => 0.5 - Math.random());
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-md justify-center">
+                         <div class="text-center mb-8 bg-white p-6 rounded-2xl shadow-lg border-t-4 border-[#e21b3c]">
+                            <p class="text-gray-400 text-sm font-bold mb-2">這個單字的意思是？</p>
+                            <h2 class="text-3xl font-black text-gray-800">${q.word}</h2>
+                         </div>
+                         <div class="grid grid-cols-1 gap-3">
+                            ${options.map(opt => `<button onclick="app.checkGameChoice('${opt.meaning}', '${q.meaning}')" class="btn-push bg-white border-2 border-gray-200 p-4 rounded-xl font-bold text-lg text-left">${opt.meaning}</button>`).join('')}
+                         </div>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            gameVowels() {
+                 const q = this.currentQuiz.questions[this.currentQuiz.index];
+                 const masked = q.word.replace(/[aeiou]/gi, '_');
+                 this.inputBuffer = '';
+                 const html = `
+                    <div class="flex flex-col h-full w-full max-w-2xl justify-center">
+                        <div class="bg-[#ffa602] text-white p-8 rounded-2xl mb-4 text-center shadow-lg">
+                            <div class="text-lg font-bold opacity-80 mb-2">${q.meaning}</div>
+                            <div class="text-5xl font-black tracking-widest">${masked}</div>
+                        </div>
+                        <div id="display-input" class="text-3xl font-bold text-[#46178f] border-b-4 border-[#46178f] min-h-[3rem] text-center px-4 mb-4"></div>
+                        ${this.getKeyboardHTML()}
+                         <button onclick="app.checkGameTypedAnswer()" class="btn-push w-full bg-[#46178f] text-white font-bold py-3 rounded-xl mt-4">確認</button>
+                    </div>
+                 `;
+                 document.getElementById('app-container').innerHTML = html;
+                 this.updateInputDisplay();
+            },
+            
+            gameBoolQuiz() {
+                const q = this.currentQuiz.questions[this.currentQuiz.index];
+                const isTrue = Math.random() > 0.5;
+                let displayMeaning = q.meaning;
+                if (!isTrue) {
+                    const other = this.sessionWords.filter(v => v.id !== q.id);
+                    if(other.length > 0) displayMeaning = other[Math.floor(Math.random()*other.length)].meaning;
+                }
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-md justify-center items-center">
+                        <div class="bg-white w-full p-8 rounded-3xl shadow-xl text-center mb-8">
+                            <h2 class="text-3xl font-black text-[#46178f] mb-2">${q.word}</h2>
+                            <div class="w-full h-px bg-gray-200 my-4"></div>
+                            <h2 class="text-2xl font-bold text-gray-600">${displayMeaning}</h2>
+                        </div>
+                        <div class="flex gap-4 w-full">
+                            <button onclick="app.checkBool(${isTrue}, true)" class="btn-push flex-1 bg-[#26890c] text-white py-6 rounded-2xl text-4xl shadow-lg"><i class="fa-solid fa-check"></i></button>
+                            <button onclick="app.checkBool(${isTrue}, false)" class="btn-push flex-1 bg-[#e21b3c] text-white py-6 rounded-2xl text-4xl shadow-lg"><i class="fa-solid fa-xmark"></i></button>
+                        </div>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            checkBool(actual, selected) {
+                const isCorrect = actual === selected;
+                if(isCorrect) this.currentQuiz.score++;
+                this.showFeedback(isCorrect, actual ? "是 (True)" : "否 (False)", selected ? "是" : "否", () => this.nextGameRound());
+            },
+            checkGameChoice(selected, correct) {
+                const isCorrect = selected === correct;
+                if (isCorrect) this.currentQuiz.score++;
+                this.showFeedback(isCorrect, correct, selected, () => this.nextGameRound());
+            },
+            nextGameRound() {
+                if(this.currentQuiz.hangmanState) delete this.currentQuiz.hangmanState;
+                this.currentQuiz.index++;
+                if (this.currentQuiz.index < this.currentQuiz.questions.length) {
+                    this.renderGameRoute();
+                } else {
+                    this.renderResult();
+                }
+            },
+
+            // --- Feedback ---
+            showFeedback(isCorrect, correctAns, userAns, callback) {
+                const overlay = document.getElementById('feedback-overlay');
+                const content = document.getElementById('feedback-content');
+                overlay.classList.remove('hidden');
+                const color = isCorrect ? 'text-[#26890c]' : 'text-[#e21b3c]';
+                const icon = isCorrect ? 'fa-circle-check' : 'fa-circle-xmark';
+                const title = isCorrect ? '答對了！' : '答錯了...';
+                content.innerHTML = `
+                    <i class="fa-solid ${icon} text-6xl ${color} mb-4 animate-pop"></i>
+                    <h2 class="text-3xl font-black ${color} mb-4">${title}</h2>
+                    ${!isCorrect ? `<div class="bg-red-50 p-4 rounded-xl mb-4 text-left"><div class="text-xs text-gray-500 font-bold uppercase">正確答案</div><div class="text-xl font-bold text-gray-800">${correctAns}</div><div class="text-xs text-gray-500 font-bold uppercase mt-2">你的答案</div><div class="text-xl font-bold text-red-500 line-through">${userAns}</div></div>` : ''}
+                    <button id="fb-next-btn" class="btn-push bg-[#46178f] text-white font-bold py-3 px-8 rounded-full text-lg shadow-lg w-full">下一題 <i class="fa-solid fa-arrow-right ml-2"></i></button>
+                `;
+                const btn = document.getElementById('fb-next-btn');
+                btn.onclick = () => { overlay.classList.add('hidden'); callback(); };
+                btn.focus();
+            },
+
+            renderResult() {
+                const score = this.currentQuiz.score;
+                const total = this.currentQuiz.questions.length;
+                const pct = Math.round((score / total) * 100);
+                let msg = pct >= 90 ? "太神啦！" : (pct >= 60 ? "不錯喔！" : "再接再厲！");
+                
+                // Add to History
+                this.addHistory(this.currentSessionInfo.modeName, score, total, this.currentSessionInfo.wbName);
+
+                const html = `
+                    <div class="bg-white rounded-3xl shadow-2xl p-8 text-center max-w-md w-full animate-pop">
+                        <h2 class="text-3xl font-black text-[#46178f] mb-2">測驗結束</h2>
+                        <p class="text-gray-400 font-bold mb-6">${msg}</p>
+                        <div class="relative w-40 h-40 mx-auto mb-6 flex items-center justify-center bg-[#46178f] rounded-full text-white text-4xl font-black border-8 border-gray-100">${score} / ${total}</div>
+                        <button onclick="app.goHome()" class="btn-push w-full bg-gray-200 text-gray-700 font-bold py-4 rounded-xl text-xl">回首頁</button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            // --- Management ---
+            renderManageWorkbookList() {
+                const listHtml = this.workbooks.map(wb => `
+                    <div class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-[#46178f] folder-tab mt-2">
+                        <div class="flex items-center gap-3 flex-1 cursor-pointer" onclick="app.renderManageWords('${wb.id}')">
+                            <i class="fa-solid fa-folder-open text-[#ffa602] text-2xl"></i>
+                            <div><div class="font-bold text-lg text-[#46178f] truncate">${wb.name}</div><div class="text-sm text-gray-500">${wb.words.length} 個單字</div></div>
+                        </div>
+                        <div class="flex gap-2 shrink-0 ml-2">
+                            <button onclick="app.editWorkbook('${wb.id}')" class="bg-blue-100 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="app.deleteWorkbook('${wb.id}')" class="bg-red-100 text-red-600 w-8 h-8 rounded-lg flex items-center justify-center"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
+                `).join('');
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-2xl">
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-black text-[#46178f]">單字本管理</h2>
+                            <button onclick="app.createWorkbook()" class="btn-push bg-[#26890c] text-white px-4 py-2 rounded-xl font-bold shadow"><i class="fa-solid fa-plus mr-1"></i> 新增</button>
+                        </div>
+                        <div class="flex-1 overflow-y-auto custom-scroll pr-1 pb-20">${listHtml || '<div class="text-center text-gray-400 mt-10">還沒有單字本，快新增一本吧！</div>'}</div>
+                        <button onclick="app.goHome()" class="w-full py-3 text-gray-500 font-bold">返回主選單</button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+            createWorkbook() { const name = prompt("請輸入單字本名稱："); if (name) { this.workbooks.push({ id: 'wb_' + Date.now(), name: name, words: [] }); this.saveData(); this.renderManageWorkbookList(); } },
+            editWorkbook(id) { const wb = this.workbooks.find(b => b.id === id); const newName = prompt("修改單字本名稱：", wb.name); if (newName) { wb.name = newName; this.saveData(); this.renderManageWorkbookList(); } },
+            deleteWorkbook(id) { if (confirm("確定要刪除這本單字本嗎？")) { this.workbooks = this.workbooks.filter(b => b.id !== id); this.saveData(); this.renderManageWorkbookList(); } },
+
+            renderManageWords(wbId) {
+                this.currentWorkbookId = wbId;
+                const wb = this.workbooks.find(b => b.id === wbId);
+                const listHtml = wb.words.map((v, idx) => `
+                    <div class="bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-gray-300">
+                        <div class="overflow-hidden">
+                            <div class="font-bold text-lg text-gray-800 truncate">${v.word}</div>
+                            <div class="text-sm text-gray-500 truncate">${v.meaning}</div>
+                        </div>
+                        <div class="flex gap-2 shrink-0">
+                            <button onclick="app.editWord(${idx})" class="bg-blue-100 text-blue-600 w-8 h-8 rounded-lg flex items-center justify-center"><i class="fa-solid fa-pen"></i></button>
+                            <button onclick="app.deleteWord(${idx})" class="bg-red-100 text-red-600 w-8 h-8 rounded-lg flex items-center justify-center"><i class="fa-solid fa-trash"></i></button>
+                        </div>
+                    </div>
+                `).join('');
+                const html = `
+                    <div class="flex flex-col h-full w-full max-w-2xl">
+                        <div class="flex items-center gap-2 mb-1"><button onclick="app.renderManageWorkbookList()" class="text-gray-500"><i class="fa-solid fa-arrow-left"></i> 返回</button></div>
+                        <div class="flex justify-between items-center mb-4">
+                            <h2 class="text-2xl font-black text-[#46178f] truncate flex-1 mr-2">${wb.name}</h2>
+                            <button onclick="app.editWord(-1)" class="btn-push bg-[#26890c] text-white px-4 py-2 rounded-xl font-bold shadow shrink-0"><i class="fa-solid fa-plus mr-1"></i> 單字</button>
+                        </div>
+                        <div class="flex-1 overflow-y-auto custom-scroll pr-1 pb-20">${listHtml || '<div class="text-center text-gray-400 mt-10">這個單字本是空的</div>'}</div>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            },
+
+            editWord(index) {
+                const wb = this.workbooks.find(b => b.id === this.currentWorkbookId);
+                const isNew = index === -1;
+                const item = isNew ? { word: '', meaning: '', sentences: [''] } : JSON.parse(JSON.stringify(wb.words[index]));
+                // UI for multiple sentences
+                const renderSentences = () => item.sentences.map((s, i) => `
+                    <div class="flex gap-2 mb-2">
+                        <input type="text" class="sent-input flex-1 bg-gray-100 p-3 rounded-lg border border-transparent focus:border-[#46178f] focus:bg-white outline-none" placeholder="例句 ${i+1} (單字處可用 ___ 代替)" value="${s.replace(/"/g, '&quot;')}">
+                        ${i > 0 ? `<button onclick="this.parentElement.remove()" class="text-red-400 px-2"><i class="fa-solid fa-minus"></i></button>` : ''}
+                    </div>
+                `).join('');
+
+                const formHtml = `
+                    <div class="text-left max-h-[80vh] overflow-y-auto">
+                        <h3 class="text-xl font-bold mb-4 text-[#46178f]">${isNew ? '新增單字' : '編輯單字'}</h3>
+                        <div class="mb-3"><label class="block text-xs font-bold text-gray-500 mb-1">英文單字</label><input type="text" id="edit-word" class="w-full bg-gray-100 p-3 rounded-lg font-bold text-lg outline-none focus:ring-2 ring-[#46178f]" value="${item.word}"></div>
+                        <div class="mb-4"><label class="block text-xs font-bold text-gray-500 mb-1">中文意思</label><input type="text" id="edit-meaning" class="w-full bg-gray-100 p-3 rounded-lg outline-none focus:ring-2 ring-[#46178f]" value="${item.meaning}"></div>
+                        <div class="mb-2">
+                            <label class="block text-xs font-bold text-gray-500 mb-1">例句 (多句可隨機出題)</label>
+                            <div id="sent-container">${renderSentences()}</div>
+                            <button id="add-sent-btn" class="text-sm text-[#1368ce] font-bold mt-2 bg-blue-50 px-3 py-1 rounded-full border border-blue-100">+ 新增一句</button>
+                        </div>
+                        <div class="flex gap-2 mt-6">
+                            <button onclick="document.getElementById('feedback-overlay').classList.add('hidden')" class="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold">取消</button>
+                            <button id="save-btn" class="flex-1 bg-[#46178f] text-white py-3 rounded-xl font-bold shadow-lg">儲存</button>
+                        </div>
+                    </div>
+                `;
+                const overlay = document.getElementById('feedback-overlay');
+                const content = document.getElementById('feedback-content');
+                content.innerHTML = formHtml;
+                overlay.classList.remove('hidden');
+                
+                document.getElementById('add-sent-btn').onclick = () => {
+                    document.getElementById('sent-container').insertAdjacentHTML('beforeend', `
+                        <div class="flex gap-2 mb-2">
+                            <input type="text" class="sent-input flex-1 bg-gray-100 p-3 rounded-lg border border-transparent focus:border-[#46178f] focus:bg-white outline-none" placeholder="新的例句...">
+                            <button onclick="this.parentElement.remove()" class="text-red-400 px-2"><i class="fa-solid fa-minus"></i></button>
+                        </div>
+                    `);
+                };
+
+                document.getElementById('save-btn').onclick = () => {
+                    const w = document.getElementById('edit-word').value.trim();
+                    const m = document.getElementById('edit-meaning').value.trim();
+                    const sentInputs = document.querySelectorAll('.sent-input');
+                    const s = Array.from(sentInputs).map(i => i.value.trim()).filter(v => v);
+                    if (!w || !m) return alert("單字和意思必填！");
+                    const newItem = { id: isNew ? Date.now() : item.id, word: w, meaning: m, sentences: s.length ? s : [''] };
+                    if (isNew) wb.words.push(newItem); else wb.words[index] = newItem;
+                    this.saveData();
+                    overlay.classList.add('hidden');
+                    this.renderManageWords(this.currentWorkbookId);
+                };
+            },
+            deleteWord(index) { if(confirm("確定要刪除這個單字嗎？")) { const wb = this.workbooks.find(b => b.id === this.currentWorkbookId); wb.words.splice(index, 1); this.saveData(); this.renderManageWords(this.currentWorkbookId); } },
+            
+            // --- Utilities ---
+            getKeyboardHTML() {
+                const rows = ["qwertyuiop", "asdfghjkl", "zxcvbnm"];
+                let keysHtml = rows.map(row => `<div class="flex gap-1 w-full justify-center mb-1">${row.split('').map(char => `<button onclick="app.handleKey('${char}')" class="key-btn flex-1 text-xl uppercase">${char}</button>`).join('')}</div>`).join('');
+                keysHtml += `<div class="flex gap-1 w-full justify-center mt-1 px-4"><button onclick="app.handleKey('backspace')" class="key-btn w-full bg-red-100 text-red-500 border-red-200"><i class="fa-solid fa-delete-left mr-2"></i> 刪除</button></div>`;
+                return `<div class="w-full bg-gray-200 p-2 pb-4 rounded-t-2xl mt-auto shrink-0">${keysHtml}</div>`;
+            },
+            handleKey(key) { if (key === 'backspace') this.inputBuffer = this.inputBuffer.slice(0, -1); else this.inputBuffer += key; this.updateInputDisplay(); },
+            updateInputDisplay() { const el = document.getElementById('display-input'); if(el) el.innerText = this.inputBuffer; },
+            renderHome() {
+                const html = `
+                    <div class="grid grid-cols-2 gap-4 w-full max-w-md animate-pop">
+                        <button onclick="app.renderWorkbookSelect('review')" class="btn-push bg-[#e21b3c] text-white rounded-2xl p-6 flex flex-col items-center justify-center gap-3 aspect-square shadow-xl"><i class="fa-solid fa-pen-to-square text-5xl"></i><span class="text-xl font-black tracking-wide">聽寫複習</span></button>
+                        <button onclick="app.renderWorkbookSelect('sentence')" class="btn-push bg-[#1368ce] text-white rounded-2xl p-6 flex flex-col items-center justify-center gap-3 aspect-square shadow-xl"><i class="fa-solid fa-quote-left text-5xl"></i><span class="text-xl font-black tracking-wide">句意填空</span></button>
+                        <button onclick="app.renderWorkbookSelect('game')" class="btn-push bg-[#ffa602] text-white rounded-2xl p-6 flex flex-col items-center justify-center gap-3 aspect-square shadow-xl"><i class="fa-solid fa-gamepad text-5xl"></i><span class="text-xl font-black tracking-wide">單字遊戲</span></button>
+                        <button onclick="app.renderManageWorkbookList()" class="btn-push bg-[#26890c] text-white rounded-2xl p-6 flex flex-col items-center justify-center gap-3 aspect-square shadow-xl"><i class="fa-solid fa-book text-5xl"></i><span class="text-xl font-black tracking-wide">管理單字</span></button>
+                    </div>
+                `;
+                document.getElementById('app-container').innerHTML = html;
+            }
+        };
+        window.onload = () => app.init();
+    </script>
+</body>
+</html>
+
