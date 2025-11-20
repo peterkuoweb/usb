@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>單字大冒險 Vocab Quest v3</title>
+    <title>單字大冒險 Vocab Quest v3.1</title>
     <meta name="theme-color" content="#46178f">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -129,7 +129,7 @@
             currentQuiz: null,
             inputBuffer: '',
             currentGameType: null,
-            currentSessionInfo: {}, // Stores metadata for history
+            currentSessionInfo: {}, 
             
             init() {
                 const savedData = localStorage.getItem('vq_data_v3');
@@ -138,15 +138,17 @@
                 if (savedData) {
                     this.workbooks = JSON.parse(savedData);
                 } else {
-                    // Migration attempt from v2
+                    // Migration logic
                     const v2Data = localStorage.getItem('vq_data_v2');
+                    const v1Data = localStorage.getItem('vq_vocab');
+                    
                     if (v2Data) {
                          this.workbooks = JSON.parse(v2Data);
-                    } else {
-                         // Migration attempt from v1
-                        const v1Data = localStorage.getItem('vq_vocab');
-                        let initialWords = v1Data ? JSON.parse(v1Data) : DEFAULT_VOCAB;
+                    } else if (v1Data) {
+                        let initialWords = JSON.parse(v1Data);
                         this.workbooks = [{ id: 'wb_' + Date.now(), name: '預設單字本', words: initialWords }];
+                    } else {
+                        this.workbooks = [{ id: 'wb_' + Date.now(), name: '預設單字本', words: DEFAULT_VOCAB }];
                     }
                     this.saveData();
                 }
@@ -171,7 +173,6 @@
                     score: `${score} / ${total}`,
                     percentage: Math.round((score/total)*100)
                 });
-                // Limit history to last 50 entries
                 if(this.history.length > 50) this.history.pop();
                 this.saveData();
             },
@@ -267,7 +268,7 @@
                 const wb = this.workbooks.find(b => b.id === id);
                 if (!wb) return;
                 
-                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify([wb])); // Wrap in array for compatibility with import
+                const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify([wb])); 
                 const downloadAnchorNode = document.createElement('a');
                 downloadAnchorNode.setAttribute("href", dataStr);
                 downloadAnchorNode.setAttribute("download", `${wb.name}_backup.json`);
@@ -276,7 +277,6 @@
                 downloadAnchorNode.remove();
             },
 
-            // Helper for generating aesthetic HTML for Export
             generateExportHTML(wb) {
                  const rows = wb.words.map((w, i) => `
                     <tr style="${i % 2 === 0 ? 'background:#f9f9f9' : ''}">
@@ -317,32 +317,24 @@
                 const id = document.getElementById('export-select').value;
                 const wb = this.workbooks.find(b => b.id === id);
                 if (!wb) return;
-
                 const htmlContent = this.generateExportHTML(wb);
                 const blob = new Blob([htmlContent], {type: 'text/html'});
                 const url = URL.createObjectURL(blob);
                 const a = document.createElement('a');
-                a.href = url;
-                a.download = `${wb.name}_list.html`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
+                a.href = url; a.download = `${wb.name}_list.html`;
+                document.body.appendChild(a); a.click(); document.body.removeChild(a);
             },
 
             exportPDF() {
                 const id = document.getElementById('export-select').value;
                 const wb = this.workbooks.find(b => b.id === id);
                 if (!wb) return;
-
                 const htmlContent = this.generateExportHTML(wb);
                 const printWindow = window.open('', '', 'height=600,width=800');
                 printWindow.document.write(htmlContent);
                 printWindow.document.close();
                 printWindow.focus();
-                setTimeout(() => {
-                    printWindow.print();
-                    printWindow.close();
-                }, 500);
+                setTimeout(() => { printWindow.print(); printWindow.close(); }, 500);
             },
 
             importJSON(input) {
@@ -352,21 +344,18 @@
                 reader.onload = (e) => {
                     try {
                         const data = JSON.parse(e.target.result);
-                        // Validate basic structure (Array of Workbooks)
                         if (Array.isArray(data) && data[0].name && Array.isArray(data[0].words)) {
                             data.forEach(wb => {
-                                wb.id = 'wb_' + Date.now() + Math.floor(Math.random()*1000); // Reset ID to avoid conflict
+                                wb.id = 'wb_' + Date.now() + Math.floor(Math.random()*1000); 
                                 this.workbooks.push(wb);
                             });
                             this.saveData();
                             alert(`成功匯入 ${data.length} 本單字本！`);
-                            this.renderSettings(); // Refresh
+                            this.renderSettings(); 
                         } else {
-                            alert("檔案格式錯誤！請確認這是由本程式匯出的 JSON 檔案。");
+                            alert("檔案格式錯誤！");
                         }
-                    } catch (err) {
-                        alert("讀取錯誤：" + err);
-                    }
+                    } catch (err) { alert("讀取錯誤：" + err); }
                 };
                 reader.readAsText(file);
             },
@@ -374,15 +363,11 @@
             // --- Workbook Selector ---
             renderWorkbookSelect(mode) {
                 const totalWords = this.workbooks.reduce((acc, wb) => acc + wb.words.length, 0);
-
                 const listHtml = this.workbooks.map(wb => `
                     <button onclick="app.handleWorkbookSelection('${mode}', '${wb.id}', '${wb.name}')" class="btn-push w-full bg-white p-4 rounded-xl shadow-sm mb-3 flex justify-between items-center border-l-4 border-[#46178f] text-left group">
                         <div class="flex items-center gap-3">
                             <i class="fa-solid fa-folder text-[#ffa602] text-2xl group-hover:scale-110 transition"></i>
-                            <div>
-                                <div class="font-bold text-lg text-gray-700">${wb.name}</div>
-                                <div class="text-xs text-gray-400">${wb.words.length} 個單字</div>
-                            </div>
+                            <div><div class="font-bold text-lg text-gray-700">${wb.name}</div><div class="text-xs text-gray-400">${wb.words.length} 個單字</div></div>
                         </div>
                         <i class="fa-solid fa-chevron-right text-gray-300"></i>
                     </button>
@@ -391,19 +376,14 @@
                 const html = `
                     <div class="flex flex-col h-full w-full max-w-md">
                         <h2 class="text-2xl font-black text-[#46178f] mb-2 text-center">選擇單字來源</h2>
-                        
                         <div class="flex-1 overflow-y-auto custom-scroll pr-1 pb-4">
                             <button onclick="app.handleWorkbookSelection('${mode}', 'all', '全部單字')" class="btn-push w-full bg-gradient-to-r from-[#46178f] to-[#6a2ec1] p-5 rounded-xl shadow-md mb-4 flex justify-between items-center text-left text-white relative overflow-hidden">
                                 <div class="relative z-10 flex items-center gap-3">
                                     <i class="fa-solid fa-layer-group text-white text-2xl"></i>
-                                    <div>
-                                        <div class="font-bold text-lg">全部單字</div>
-                                        <div class="text-xs text-white/70">共 ${totalWords} 個單字</div>
-                                    </div>
+                                    <div><div class="font-bold text-lg">全部單字</div><div class="text-xs text-white/70">共 ${totalWords} 個單字</div></div>
                                 </div>
                                 <i class="fa-solid fa-play text-white/50 text-xl relative z-10"></i>
                             </button>
-
                             ${listHtml}
                         </div>
                         <button onclick="app.goHome()" class="text-gray-400 py-4 font-bold text-sm">取消返回</button>
@@ -420,13 +400,9 @@
                     this.sessionWords = wb ? [...wb.words] : [];
                 }
 
-                if (this.sessionWords.length === 0) return alert("這個單字本是空的！請先去管理單字新增內容。");
+                if (this.sessionWords.length === 0) return alert("這個單字本是空的！");
 
-                // Store session info for history
-                this.currentSessionInfo = {
-                    wbName: wbName,
-                    modeName: '' // Will be set in next step
-                };
+                this.currentSessionInfo = { wbName: wbName, modeName: '' };
 
                 if (mode === 'review') {
                     this.currentSessionInfo.modeName = '聽寫複習';
@@ -454,9 +430,7 @@
                             </div>
                             <input type="range" id="q-slider" min="1" max="${max}" value="${Math.min(5, max)}" class="w-full mt-4 accent-[#46178f]" oninput="updateCount(this.value)">
                         </div>
-                        <button onclick="app.initReview(parseInt(document.getElementById('q-slider').value))" class="btn-push w-full bg-[#26890c] text-white text-xl font-bold py-4 rounded-xl">
-                            開始挑戰
-                        </button>
+                        <button onclick="app.initReview(parseInt(document.getElementById('q-slider').value))" class="btn-push w-full bg-[#26890c] text-white text-xl font-bold py-4 rounded-xl">開始挑戰</button>
                     </div>
                 `;
                 document.getElementById('app-container').innerHTML = html;
@@ -489,9 +463,7 @@
                             <div class="h-full bg-[#1368ce] transition-all duration-500" style="width: ${(this.currentQuiz.index / this.currentQuiz.questions.length) * 100}%"></div>
                         </div>
                         <div class="flex-1 flex flex-col items-center justify-center bg-white rounded-xl shadow-lg p-4 relative mb-2">
-                            <button onclick="app.speak('${q.word.replace(/'/g, "\\'")}')" class="btn-push bg-[#ffa602] text-white w-20 h-20 rounded-full text-3xl shadow-lg mb-6 flex items-center justify-center">
-                                <i class="fa-solid fa-volume-high"></i>
-                            </button>
+                            <button onclick="app.speak('${q.word.replace(/'/g, "\\'")}')" class="btn-push bg-[#ffa602] text-white w-20 h-20 rounded-full text-3xl shadow-lg mb-6 flex items-center justify-center"><i class="fa-solid fa-volume-high"></i></button>
                             <p class="text-gray-400 mb-2">請輸入聽到的單字</p>
                             <div id="display-input" class="text-4xl font-black text-[#46178f] tracking-widest border-b-4 border-gray-200 min-h-[3rem] min-w-[200px] text-center px-4 mb-2"><span class="animate-pulse">|</span></div>
                             <button onclick="this.innerText = '${q.meaning}'; this.classList.remove('bg-gray-100', 'text-gray-400'); this.classList.add('text-[#1368ce]')" class="mt-4 text-sm bg-gray-100 text-gray-400 px-3 py-1 rounded-full">顯示提示 (意思)</button>
@@ -506,13 +478,11 @@
 
             // --- Sentence Completion ---
             startSentenceSetup() {
-                // Ensure we only pick words with sentences
                 const validWords = this.sessionWords.filter(w => w.sentences && w.sentences.some(s => s.trim() !== ""));
-                if (validWords.length === 0) return alert("選定的單字中沒有設定例句！請去管理單字新增例句。");
+                if (validWords.length === 0) return alert("選定的單字中沒有設定例句！");
 
                 const count = Math.min(5, validWords.length);
                 const shuffled = [...validWords].sort(() => 0.5 - Math.random()).slice(0, count);
-                
                 this.currentQuiz = { type: 'sentence', questions: shuffled, index: 0, score: 0 };
                 this.renderSentenceQuestion();
             },
@@ -520,11 +490,8 @@
             renderSentenceQuestion() {
                 this.inputBuffer = '';
                 const q = this.currentQuiz.questions[this.currentQuiz.index];
-                // Randomly pick one sentence from the array
                 const sentenceRaw = q.sentences[Math.floor(Math.random() * q.sentences.length)];
-                
                 let sentenceDisplay = sentenceRaw;
-                // Replace word with blank if not already blanked (case insensitive)
                 if (!sentenceDisplay.includes('___')) {
                    const reg = new RegExp(q.word, 'gi');
                    sentenceDisplay = sentenceDisplay.replace(reg, '___');
@@ -538,9 +505,7 @@
                         </div>
                         <div class="flex-1 flex flex-col items-center justify-center bg-white rounded-xl shadow-lg p-6 mb-2 text-center">
                             <h3 class="text-xl text-gray-500 font-bold mb-2">填入正確單字</h3>
-                            <div class="text-2xl font-bold text-gray-800 leading-relaxed bg-gray-50 p-4 rounded-lg w-full">
-                                ${sentenceDisplay}
-                            </div>
+                            <div class="text-2xl font-bold text-gray-800 leading-relaxed bg-gray-50 p-4 rounded-lg w-full">${sentenceDisplay}</div>
                              <div class="mt-2 text-sm text-gray-400">(${q.meaning})</div>
                              <div id="display-input" class="mt-6 text-4xl font-black text-[#26890c] tracking-widest border-b-4 border-gray-200 min-h-[3rem] min-w-[200px] text-center px-4"><span class="animate-pulse">|</span></div>
                         </div>
@@ -566,36 +531,15 @@
                     { id: 9, name: "母音大填空", icon: "fa-i-cursor", color: "bg-yellow-500", type: "vowels" },
                     { id: 10, name: "真假單字", icon: "fa-check-double", color: "bg-cyan-600", type: "bool_quiz" }
                 ];
-
-                const grid = games.map(g => `
-                    <button onclick="app.startGame('${g.type}', '${g.name}')" class="btn-push ${g.color} text-white rounded-xl p-4 flex flex-col items-center justify-center gap-2 shadow-lg h-28">
-                        <i class="fa-solid ${g.icon} text-3xl"></i>
-                        <span class="font-bold text-sm">${g.name}</span>
-                    </button>
-                `).join('');
-
-                document.getElementById('app-container').innerHTML = `
-                    <div class="w-full max-w-2xl h-full flex flex-col">
-                        <h2 class="text-2xl font-black text-[#46178f] mb-4 text-center">選擇遊戲</h2>
-                        <div class="grid grid-cols-2 gap-3 overflow-y-auto pb-4 custom-scroll flex-1">
-                            ${grid}
-                        </div>
-                    </div>
-                `;
+                const grid = games.map(g => `<button onclick="app.startGame('${g.type}', '${g.name}')" class="btn-push ${g.color} text-white rounded-xl p-4 flex flex-col items-center justify-center gap-2 shadow-lg h-28"><i class="fa-solid ${g.icon} text-3xl"></i><span class="font-bold text-sm">${g.name}</span></button>`).join('');
+                document.getElementById('app-container').innerHTML = `<div class="w-full max-w-2xl h-full flex flex-col"><h2 class="text-2xl font-black text-[#46178f] mb-4 text-center">選擇遊戲</h2><div class="grid grid-cols-2 gap-3 overflow-y-auto pb-4 custom-scroll flex-1">${grid}</div></div>`;
             },
 
             startGame(type, name) {
                 if(this.sessionWords.length < 4) return alert("單字量太少，請至少選擇有 4 個單字以上的單字本！");
                 this.currentGameType = type;
-                this.currentSessionInfo.modeName = name; // Update for history
-                
-                this.currentQuiz = {
-                    type: 'game',
-                    gameType: type,
-                    questions: [...this.sessionWords].sort(() => 0.5 - Math.random()).slice(0, 10), 
-                    index: 0,
-                    score: 0
-                };
+                this.currentSessionInfo.modeName = name; 
+                this.currentQuiz = { type: 'game', gameType: type, questions: [...this.sessionWords].sort(() => 0.5 - Math.random()).slice(0, 10), index: 0, score: 0 };
                 this.renderGameRoute();
             },
 
@@ -613,7 +557,7 @@
                 else if (type === 'bool_quiz') this.gameBoolQuiz();
             },
 
-            // --- Game Logic (Simplified for space) ---
+            // --- Game Logic ---
             checkGameTypedAnswer() {
                 const q = this.currentQuiz.questions[this.currentQuiz.index];
                 const userAns = this.inputBuffer.trim().toLowerCase();
@@ -621,6 +565,25 @@
                 const isCorrect = userAns === correctAns;
                 if (isCorrect) this.currentQuiz.score++;
                 this.showFeedback(isCorrect, correctAns, userAns, () => { this.nextGameRound(); });
+            },
+
+            // !!! CRITICAL FIX HERE !!!
+            nextGameRound() {
+                if(this.currentQuiz.hangmanState) delete this.currentQuiz.hangmanState;
+                this.currentQuiz.index++;
+                
+                if (this.currentQuiz.index < this.currentQuiz.questions.length) {
+                    // Route based on quiz type
+                    if (this.currentQuiz.type === 'review') {
+                        this.renderReviewQuestion();
+                    } else if (this.currentQuiz.type === 'sentence') {
+                        this.renderSentenceQuestion();
+                    } else {
+                        this.renderGameRoute();
+                    }
+                } else {
+                    this.renderResult();
+                }
             },
 
             gameFlashcards() {
@@ -869,15 +832,6 @@
                 if (isCorrect) this.currentQuiz.score++;
                 this.showFeedback(isCorrect, correct, selected, () => this.nextGameRound());
             },
-            nextGameRound() {
-                if(this.currentQuiz.hangmanState) delete this.currentQuiz.hangmanState;
-                this.currentQuiz.index++;
-                if (this.currentQuiz.index < this.currentQuiz.questions.length) {
-                    this.renderGameRoute();
-                } else {
-                    this.renderResult();
-                }
-            },
 
             // --- Feedback ---
             showFeedback(isCorrect, correctAns, userAns, callback) {
@@ -980,7 +934,6 @@
                 const wb = this.workbooks.find(b => b.id === this.currentWorkbookId);
                 const isNew = index === -1;
                 const item = isNew ? { word: '', meaning: '', sentences: [''] } : JSON.parse(JSON.stringify(wb.words[index]));
-                // UI for multiple sentences
                 const renderSentences = () => item.sentences.map((s, i) => `
                     <div class="flex gap-2 mb-2">
                         <input type="text" class="sent-input flex-1 bg-gray-100 p-3 rounded-lg border border-transparent focus:border-[#46178f] focus:bg-white outline-none" placeholder="例句 ${i+1} (單字處可用 ___ 代替)" value="${s.replace(/"/g, '&quot;')}">
